@@ -55,6 +55,14 @@ body {
   border: 1px solid var(--accent);
 }
 
+/* ── Sky canvas ── */
+#sky-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  z-index: 0;
+}
+
 /* ── HUD ── */
 #hud {
   position: absolute;
@@ -64,6 +72,7 @@ body {
   line-height: 2;
   pointer-events: none;
   color: var(--dim);
+  z-index: 5;
 }
 #hud span { color: var(--accent); }
 
@@ -76,6 +85,7 @@ body {
   color: rgba(255,255,255,0.2);
   pointer-events: none;
   line-height: 1;
+  z-index: 5;
 }
 
 /* ── Target label ── */
@@ -91,6 +101,7 @@ body {
   text-shadow: 0 0 12px var(--accent);
   transition: color 0.2s;
   letter-spacing: 1px;
+  z-index: 5;
 }
 #target-label.locked { color: var(--warn); text-shadow: 0 0 16px var(--warn); }
 
@@ -104,12 +115,14 @@ body {
   color: var(--dim);
   pointer-events: none;
   transition: opacity 0.3s;
+  z-index: 5;
 }
 
 /* ── Bottom toolbar ── */
 #toolbar {
   position: absolute;
   bottom: 0; left: 0; right: 0;
+  z-index: 5;
   display: flex;
   justify-content: space-around;
   padding: 12px 0 20px;
@@ -187,6 +200,7 @@ body {
 #log-btn {
   position: absolute;
   bottom: 90px;
+  z-index: 5;
   left: 50%;
   transform: translateX(-50%);
   display: none;
