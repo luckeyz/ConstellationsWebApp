@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Web Planetarium</title>
+    <style>
+        body { margin: 0; background-color: #0b0f19; color: #00ffcc; font-family: monospace; overflow: hidden; }
+        #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.9); z-index: 10; }
+        button { padding: 15px 30px; font-size: 18px; background: #00ffcc; color: black; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #hud { padding: 20px; font-size: 14px; line-height: 1.5; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 40px; color: rgba(255, 255, 255, 0.3); pointer-events: none; }
+        #target-label { position: absolute; top: 40%; width: 100%; text-align: center; font-size: 28px; font-weight: bold; color: #fff; pointer-events: none; text-shadow: 0 0 15px #00ffcc; transition: 0.2s; }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h2 style="color: white; margin-bottom: 20px;">Real-Time Stargazer</h2>
+        <button id="start-btn">Calibrate Sensors</button>
+    </div>
+
+    <div id="hud">
+        <div>GPS: <span id="gps-data">Locating...</span></div>
+        <div>Phone Azimuth: <span id="heading-data">0</span>°</div>
+        <div>Phone Altitude: <span id="tilt-data">0</span>°</div>
+    </div>
+
+    <div id="crosshair">✛</div>
+    <div id="target-label">Scan the sky...</div>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const startScreen = document.getElementById('start-screen');
+        const gpsData = document.getElementById('gps-data');
+        const headingData = document.getElementById('heading-data');
+        const tiltData = document.getElementById('tilt-data');
+        const targetLabel = document.getElementById('target-label');
+
+        let userLat = null;
+        let userLon = null;
+
+        // --- 1. THE STAR DATABASE (RA in degrees, Dec in degrees) ---
+        const celestialObjects = [
+            { name: "Polaris (Ursa Minor)", ra: 37.95, dec: 89.26 },
+            { name: "Betelgeuse (Orion)", ra: 88.79, dec: 7.40 },
+            { name: "Sirius (Canis Major)", ra: 101.28, dec: -16.71 },
+            { name: "Vega (Lyra)", ra: 279.23, dec: 38.78 },
+            { name: "Aldebaran (Taurus)", ra: 68.98, dec: 16.51 }
+        ];
+
+        // --- 2. SENSOR INITIALIZATION ---
+        startBtn.addEventListener('click', async () => {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    if (permissionState === 'granted') startSensors();
+                    else alert("Gyroscope permission denied.");
+                } catch (error) { console.error(error); }
+            } else {
+                startSensors();
+            }
+        });
+
+        function startSensors() {
+            startScreen.style.display = 'none';
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    userLat = position.coords.latitude;
+                    userLon = position.coords.longitude;
+                    gpsData.innerText = `${userLat.toFixed(2)}°, ${userLon.toFixed(2)}°`;
+                },
+                (err) => { gpsData.innerText = "GPS Error. Using Seattle."; userLat = 47.60; userLon = -122.33; }
+            );
+            window.addEventListener('deviceorientation', handleOrientation);
+        }
+
+        // --- 3. ASTRONOMY MATH ENGINE ---
+        const D2R = Math.PI / 180; // Degrees to Radians
+        const R2D = 180 / Math.PI; // Radians to Degrees
+
+        function getAltAz(ra, dec, lat, lon) {
+            const now = new Date();
+            // Calculate Julian Date
+            const time = now.getTime() / 86400000.0 + 2440587.5;
+            const t = (time - 2451545.0) / 36525.0;
+
+            // Calculate Greenwich Mean Sidereal Time (GMST) in degrees
+            let gmst = 280.46061837 + 360.98564736629 * (time - 2451545.0) + 0.000387933 * t * t;
+            gmst = gmst % 360;
+            if (gmst < 0) gmst += 360;
+
+            // Local Sidereal Time and Hour Angle
+            let lst = gmst + lon;
+            let ha = lst - ra;
+            if (ha < 0) ha += 360;
+
+            // Spherical Trigonometry
+            const latR = lat * D2R;
+            const decR = dec * D2R;
+            const haR = ha * D2R;
+
+            let sinAlt = Math.sin(decR) * Math.sin(latR) + Math.cos(decR) * Math.cos(latR) * Math.cos(haR);
+            let alt = Math.asin(sinAlt) * R2D;
+
+            let cosAz = (Math.sin(decR) - Math.sin(latR) * sinAlt) / (Math.cos(latR) * Math.cos(Math.asin(sinAlt)));
+            let az = Math.acos(cosAz) * R2D;
+
+            if (Math.sin(haR) > 0) az = 360 - az;
+
+            return { alt: alt, az: az };
+        }
+
+        // --- 4. THE RADAR / TARGETING SYSTEM ---
+        function handleOrientation(event) {
+            if (userLat === null) return; // Wait for GPS
+
+            let phoneAz = event.webkitCompassHeading || (360 - event.alpha);
+            let phoneAlt = event.beta; // Simplified for holding upright
+
+            headingData.innerText = Math.round(phoneAz);
+            tiltData.innerText = Math.round(phoneAlt);
+
+            let foundObject = null;
+
+            // Check distance to all objects
+            for (let obj of celestialObjects) {
+                let starPos = getAltAz(obj.ra, obj.dec, userLat, userLon);
+
+                // If the star is below the horizon, skip it
+                if (starPos.alt < 0) continue;
+
+                // Calculate difference between phone pointer and star
+                let azDiff = Math.abs(phoneAz - starPos.az);
+                let altDiff = Math.abs(phoneAlt - starPos.alt);
+
+                // Handle 360 wrap-around for azimuth
+                if (azDiff > 180) azDiff = 360 - azDiff;
+
+                // Field of View "hitbox" (within 10 degrees)
+                if (azDiff < 10 && altDiff < 10) {
+                    foundObject = obj.name;
+                    break;
+                }
+            }
+
+            if (foundObject) {
+                targetLabel.innerText = `🎯 ${foundObject}`;
+                targetLabel.style.color = "#ffdd00"; // Highlight yellow
+            } else {
+                targetLabel.innerText = "Scan the sky...";
+                targetLabel.style.color = "#fff";
+            }
+        }
+    </script>
+</body>
+</html>
